@@ -24,9 +24,9 @@ class CurrencyService:
                 data = await response.json()
                 return data
 
-    async def get_currency_rates_for_last_days(self, days: int, currencies: list = ["EUR", "USD"]):
+    async def get_currency_rates_for_last_days(self, days: int, currencies: list = ["USD", "EUR", "CHF", "GBP", "PLZ", "SEK", "XAU", "CAD"]):
         currency_rates = []
-        for i in range(days):
+        for i in range(min(days, 10)):  # Обмежуємо кількість днів до 10
             date = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime("%d.%m.%Y")
             currency_rate = await self.get_currency_rate(date)
             selected_currencies = {currency: currency_rate["exchangeRate"].get(currency) for currency in currencies}
@@ -71,12 +71,16 @@ class ChatServer:
 async def main(days: int):
     server = ChatServer()
     async with websockets.serve(server.ws_handler, 'localhost', 8080):
-        await asyncio.Future()  # run forever
+        await asyncio.Future()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Get currency rates for the last few days")
-    parser.add_argument("days", type=int, help="Number of days to get currency rates for")
+    parser.add_argument("days", type=int, help="Number of days to get currency rates for (maximum 10)")
     args = parser.parse_args()
+
+    if args.days > 10:
+        print("Error: Number of days should be maximum 10.")
+        exit()
 
     asyncio.run(main(args.days))
