@@ -2,15 +2,23 @@ import asyncio
 import aiohttp
 import argparse
 import datetime
-import aiofile
+import aiofiles
+import logging
+import websockets
+import names
+from websockets import WebSocketServerProtocol
+from websockets.exceptions import ConnectionClosedOK
+
+logging.basicConfig(level=logging.INFO)
+
 
 class CurrencyService:
-    PRIVATBANK_API_URL = "https://api.privatbank.ua/p24api/exchange_rates"
+    PRIVATBANK_API_URL = "https://api.privatbank.ua/#p24/exchangeArchive"
 
     async def get_currency_rate(self, date: str = None):
         if not date:
             date = datetime.datetime.now().strftime("%d.%m.%Y")
-        
+
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{self.PRIVATBANK_API_URL}?json&date={date}") as response:
                 data = await response.json()
@@ -25,27 +33,50 @@ class CurrencyService:
             currency_rates.append({date: selected_currencies})
         return currency_rates
 
+
+class ChatServer:
+    clients = set()
+
+    async def register(self, ws: WebSocketServerProtocol):
+        ws.name = names.get_full_name()
+        self.clients.add(ws)
+        logging.info(f'{ws.remote_address} connects')
+
+    async def unregister(self, ws: WebSocketServerProtocol):
+        self.clients.remove(ws)
+        logging.info(f'{ws.remote_address} disconnects')
+
+    async def send_to_clients(self, message: str):
+        if self.clients:
+            [await client.send(message) for client in self.clients]
+
+    async def ws_handler(self, ws: WebSocketServerProtocol):
+        await self.register(ws)
+        try:
+            async for message in ws:
+                if message.strip().lower() == "exchange":
+                    service = CurrencyService()
+                    currency_rates = await service.get_currency_rates_for_last_days(2)
+                    formatted_rates = "\n".join(
+                        [f"{date}: {rates}" for rate in currency_rates for date, rates in rate.items()])
+                    await ws.send(formatted_rates)
+                else:
+                    await self.send_to_clients(f"{ws.name}: {message}")
+        except ConnectionClosedOK:
+            pass
+        finally:
+            await self.unregister(ws)
+
+
 async def main(days: int):
-    service = CurrencyService()
-    currency_rates = await service.get_currency_rates_for_last_days(days)
-    print(currency_rates)
+    server = ChatServer()
+    async with websockets.serve(server.ws_handler, 'localhost', 8080):
+        await asyncio.Future()  # run forever
 
-async def ws_exchange_command(message: str):
-    if message.strip().lower() == "exchange":
-        service = CurrencyService()
-        currency_rates = await service.get_currency_rates_for_last_days(2)
-        formatted_rates = "\n".join([f"{date}: {rates}" for rate in currency_rates for date, rates in rate.items()])
-        await log_exchange_command()
-        return formatted_rates
-    return None
-
-async def log_exchange_command():
-    async with aiofile.async_open("exchange.log", mode="a") as f:
-        await f.write(f"Exchange command executed at {datetime.datetime.now()}\n")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Get currency rates for the last few days")
     parser.add_argument("days", type=int, help="Number of days to get currency rates for")
     args = parser.parse_args()
-    
+
     asyncio.run(main(args.days))
