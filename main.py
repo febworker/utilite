@@ -11,6 +11,7 @@ from websockets.exceptions import ConnectionClosedOK
 
 logging.basicConfig(level=logging.INFO)
 
+#privatapi
 
 class CurrencyService:
     PRIVATBANK_API_URL = "https://api.privatbank.ua/#p24/exchangeArchive"
@@ -24,16 +25,19 @@ class CurrencyService:
                 data = await response.json()
                 return data
 
+    #currency rates for a few days
+
     async def get_currency_rates_for_last_days(self, days: int, currencies: list = ["USD", "EUR", "CHF", "GBP", "PLZ", "SEK", "XAU", "CAD"]):
         currency_rates = []
-        for i in range(min(days, 10)):  # Обмежуємо кількість днів до 10
+        for i in range(min(days, 10)):  # days limitation
             date = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime("%d.%m.%Y")
             currency_rate = await self.get_currency_rate(date)
             selected_currencies = {currency: currency_rate["exchangeRate"].get(currency) for currency in currencies}
             currency_rates.append({date: selected_currencies})
         return currency_rates
 
-
+#server
+    
 class ChatServer:
     clients = set()
 
